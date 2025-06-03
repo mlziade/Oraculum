@@ -1,7 +1,8 @@
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action
 from .models import Picture, Tag, ProcessingQueue
 import os
 
@@ -57,3 +58,86 @@ class UploadPictureViewSet(viewsets.ViewSet):
                 {"error": f"Failed to upload picture: {str(e)}"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class ProcessingQueueViewSet(viewsets.ViewSet):
+    """
+    ViewSet for checking processing queue status.
+    """
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get the status of a specific processing job by ID.
+        """
+        try:
+            job = get_object_or_404(ProcessingQueue, pk=pk)
+            
+            # Get associated picture and tags
+            picture_data = {
+                'id': job.picture.id,
+                'title': job.picture.title,
+                'description': job.picture.description,
+                'image_url': job.picture.image.url if job.picture.image else None,
+                'tags': [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
+            }
+            
+            response_data = {
+                'job_id': job.id,
+                'status': job.status,
+                'created_at': job.created_at,
+                'updated_at': job.updated_at,
+                'picture': picture_data
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to retrieve job status: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def list(self, request):
+        """
+        List all processing jobs with optional status filtering.
+        """
+        status_filter = request.query_params.get('status', None)
+        
+        queryset = ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags')
+        
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        jobs = []
+        for job in queryset.order_by('-created_at'):
+            picture_data = {
+                'id': job.picture.id,
+                'title': job.picture.title,
+                'description': job.picture.description,
+                'image_url': job.picture.image.url if job.picture.image else None,
+                'tags': [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
+            }
+            
+            jobs.append({
+                'job_id': job.id,
+                'status': job.status,
+                'created_at': job.created_at,
+                'updated_at': job.updated_at,
+                'picture': picture_data
+            })
+        
+        return Response({'jobs': jobs}, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """
+        Get processing queue statistics.
+        """
+        stats = {
+            'total_jobs': ProcessingQueue.objects.count(),
+            'pending': ProcessingQueue.objects.filter(status=ProcessingQueue.StatusChoices.PENDING).count(),
+            'processing': ProcessingQueue.objects.filter(status=ProcessingQueue.StatusChoices.PROCESSING).count(),
+            'completed': ProcessingQueue.objects.filter(status=ProcessingQueue.StatusChoices.COMPLETED).count(),
+            'failed': ProcessingQueue.objects.filter(status=ProcessingQueue.StatusChoices.FAILED).count(),
+        }
+        
+        return Response(stats, status=status.HTTP_200_OK)

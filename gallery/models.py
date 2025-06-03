@@ -1,6 +1,7 @@
 from django.db import models
 
 class Picture(models.Model):
+    id = models.BigAutoField(primary_key=True, help_text="Primary key for the picture")
     title = models.CharField(max_length=255, help_text="Title of the picture")
     image = models.ImageField(upload_to='pictures/', help_text="Image file of the picture")
     description = models.TextField(blank=True, null=True, help_text="Description of the picture")
@@ -18,6 +19,7 @@ class Picture(models.Model):
         ordering = ['title']
 
 class Tag(models.Model):
+    id = models.BigAutoField(primary_key=True, help_text="Primary key for the tag")
     name = models.CharField(max_length=50, unique=True, help_text="Name of the tag")
     description = models.TextField(blank=True, null=True, help_text="Description of the tag")
     classification = models.CharField(max_length=50, blank=True, null=True, help_text="Classification of the tag (optional)")
@@ -37,6 +39,7 @@ class ProcessingQueue(models.Model):
         COMPLETED = 'completed', 'Completed'
         FAILED = 'failed', 'Failed'
 
+    id = models.BigAutoField(primary_key=True, help_text="Primary key for the processing queue")
     picture = models.ForeignKey(Picture, on_delete=models.CASCADE, related_name='processing_queue', help_text="Picture to be processed")
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING, help_text="Current status of the processing")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Date and time when the processing was created")

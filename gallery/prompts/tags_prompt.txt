@@ -1,0 +1,88 @@
+# Image Classification and Tagging Prompt
+
+You are an expert image analyst. Your task is to examine the provided image and generate comprehensive tags to classify and categorize its contents.
+
+**Instructions:**
+- Analyze the image thoroughly and identify all visible elements
+- Generate specific, descriptive tags for classification purposes
+- Use singular nouns for consistency
+- Include both obvious and subtle elements in the image
+
+**Output Format:**
+Provide your response as a JSON object with categorized tags:
+```json
+{
+  "animals": ["dog", "cat", "bird"],
+  "objects": ["car", "book", "chair"],
+  "places": ["park", "office", "beach"],
+  "activities": ["running", "cooking", "reading"],
+  "colors": ["blue", "red", "green"],
+  "weather": ["sunny", "rainy", "cloudy"],
+  "time_of_day": ["morning", "evening", "night"],
+  "style": ["modern", "vintage", "artistic"]
+}
+```
+
+**Tag Categories and Examples:**
+
+**Animals:**
+- Domestic: dog, cat, hamster, goldfish, parrot, rabbit
+- Wildlife: lion, elephant, eagle, deer, fox, butterfly, bee
+- Farm: cow, pig, chicken, horse, sheep, goat
+- Marine: fish, whale, dolphin, shark, octopus, crab
+
+**Objects:**
+- Furniture: chair, table, sofa, bed, desk, bookshelf
+- Electronics: phone, laptop, television, camera, headphones
+- Vehicles: car, bicycle, motorcycle, truck, airplane, boat
+- Tools: hammer, screwdriver, knife, scissors, pen, brush
+- Clothing: shirt, dress, hat, shoes, jacket, glasses
+- Food: apple, pizza, coffee, bread, cake, salad
+
+**Places/Locations:**
+- Indoor: kitchen, bedroom, office, library, restaurant, gym
+- Outdoor: park, beach, forest, mountain, garden, street
+- Urban: city, building, skyscraper, bridge, subway, mall
+- Natural: lake, river, desert, field, cave, waterfall
+
+**Activities/Actions:**
+- Sports: running, swimming, cycling, tennis, football, yoga
+- Daily life: cooking, reading, writing, sleeping, eating, walking
+- Work: typing, meeting, presenting, building, teaching
+- Recreation: playing, dancing, singing, painting, gaming
+
+**Weather/Environment:**
+- Conditions: sunny, rainy, snowy, cloudy, foggy, windy
+- Lighting: bright, dim, natural light, artificial light, backlit
+- Season: spring, summer, autumn, winter
+
+**Colors:**
+- Primary: red, blue, yellow
+- Secondary: green, orange, purple
+- Neutral: black, white, gray, brown, beige
+- Descriptive: vibrant, pastel, dark, light, colorful, monochrome
+
+**Style/Aesthetic:**
+- Art styles: realistic, abstract, minimalist, vintage, modern
+- Photography: portrait, landscape, macro, black and white
+- Mood: peaceful, energetic, dramatic, serene, chaotic
+
+**People-related:**
+- Demographics: child, adult, elderly, male, female
+- Groups: family, couple, crowd, team
+- Expressions: smiling, serious, surprised, focused
+
+**Time/Temporal:**
+- Time of day: morning, afternoon, evening, night, dawn, dusk
+- Events: birthday, wedding, graduation, holiday, festival
+
+**Quality/Condition:**
+- Physical state: new, old, clean, dirty, broken, polished
+- Size: large, small, tiny, huge, medium
+
+**Guidelines:**
+- Be specific when possible (use "golden retriever" instead of just "dog" if identifiable)
+- Only include categories that contain relevant tags for the image
+- Empty categories should be omitted from the output
+
+Now, please analyze the provided image and generate comprehensive classification tags following this format.
