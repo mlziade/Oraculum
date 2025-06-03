@@ -11,3 +11,10 @@ wheels/
 
 # Environment variables
 .env
+
+# Database files
+*.sqlite3
+db.sqlite3
+
+# Images files
+media/
