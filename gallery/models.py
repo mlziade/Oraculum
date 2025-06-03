@@ -28,3 +28,24 @@ class Tag(models.Model):
         verbose_name = "Tag"
         verbose_name_plural = "Tags"
         ordering = ['name']
+
+class ProcessingQueue(models.Model):
+
+    class StatusChoices(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        PROCESSING = 'processing', 'Processing'
+        COMPLETED = 'completed', 'Completed'
+        FAILED = 'failed', 'Failed'
+
+    picture = models.ForeignKey(Picture, on_delete=models.CASCADE, related_name='processing_queue', help_text="Picture to be processed")
+    status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING, help_text="Current status of the processing")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Date and time when the processing was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Date and time when the processing was last updated")
+
+    def __str__(self):
+        return f"{self.picture.title} - {self.status}"
+
+    class Meta:
+        verbose_name = "Processing Queue"
+        verbose_name_plural = "Processing Queues"
+        ordering = ['created_at']
