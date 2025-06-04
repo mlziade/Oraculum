@@ -1,13 +1,19 @@
 import os
 import logging
+import time
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from jobs.models import QueueJob
 from recognition.models import FaceExtraction
 from recognition.service import FaceExtractionService
 
+# Configure logging for this command
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - [FACE_EXTRACTION] - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
-
 
 class Command(BaseCommand):
     help = 'Process pending face extraction jobs from the queue'
@@ -29,18 +35,20 @@ class Command(BaseCommand):
         max_jobs = options.get('max_jobs', 5)
         run_once = options.get('run_once', False)
 
-        self.stdout.write(
-            self.style.SUCCESS(f'Starting face extraction job processor (max_jobs: {max_jobs})...')
-        )
+        start_message = f'🔍 Starting face extraction job processor (max_jobs: {max_jobs})'
+        self.stdout.write(self.style.SUCCESS(start_message))
+        logger.info(start_message)
 
         # Initialize Face Extraction service
         try:
             face_extraction_service = FaceExtractionService()
-            self.stdout.write('Face extraction service initialized successfully')
+            init_message = '✅ Face extraction service initialized successfully'
+            self.stdout.write(init_message)
+            logger.info(init_message)
         except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'Face extraction service initialization failed: {str(e)}')
-            )
+            error_message = f'❌ Face extraction service initialization failed: {str(e)}'
+            self.stdout.write(self.style.ERROR(error_message))
+            logger.error(error_message, exc_info=True)
             return
 
         if run_once:
@@ -50,34 +58,40 @@ class Command(BaseCommand):
 
     def _process_jobs_once(self, face_extraction_service, max_jobs):
         """Process jobs once and exit"""
+        logger.info(f'🎯 Processing face extraction jobs once (max: {max_jobs})')
         processed_count, failed_count = self._process_pending_jobs(face_extraction_service, max_jobs)
         
-        self.stdout.write(
-            self.style.SUCCESS(
-                f'Processing completed. Processed: {processed_count}, Failed: {failed_count}'
-            )
-        )
+        completion_message = f'✅ Face extraction processing completed. Processed: {processed_count}, Failed: {failed_count}'
+        self.stdout.write(self.style.SUCCESS(completion_message))
+        logger.info(completion_message)
 
     def _process_jobs_continuously(self, face_extraction_service, max_jobs):
         """Process jobs continuously every 15 seconds"""
-        import time
         
-        self.stdout.write('Starting continuous processing (every 15 seconds)...')
+        start_message = '🔄 Starting continuous face extraction processing (every 15 seconds)...'
+        self.stdout.write(start_message)
+        logger.info(start_message)
         
         try:
             while True:
+                logger.info('🔍 Checking for pending face extraction jobs...')
                 processed_count, failed_count = self._process_pending_jobs(face_extraction_service, max_jobs)
                 
                 if processed_count > 0 or failed_count > 0:
-                    self.stdout.write(
-                        f'Batch completed. Processed: {processed_count}, Failed: {failed_count}'
-                    )
+                    batch_message = f'📊 Face extraction batch completed. Processed: {processed_count}, Failed: {failed_count}'
+                    self.stdout.write(batch_message)
+                    logger.info(batch_message)
+                else:
+                    logger.debug('No face extraction jobs to process')
                 
+                logger.info('⏳ Waiting 15 seconds before next face extraction check...')
                 # Wait 15 seconds before next check
                 time.sleep(15)
                 
         except KeyboardInterrupt:
-            self.stdout.write(self.style.WARNING('Face extraction processor stopped by user'))
+            stop_message = '⚠️ Face extraction processor stopped by user'
+            self.stdout.write(self.style.WARNING(stop_message))
+            logger.warning(stop_message)
 
     def _process_pending_jobs(self, face_extraction_service, max_jobs):
         """Process pending face extraction jobs"""
@@ -91,20 +105,24 @@ class Command(BaseCommand):
         ).select_related('picture').order_by('created_at')[:max_jobs]
 
         if not pending_jobs.exists():
+            logger.debug('No pending face extraction jobs found')
             return processed_count, failed_count
 
-        self.stdout.write(f'Found {pending_jobs.count()} pending face extraction job(s) to process.')
+        job_count_message = f'📋 Found {pending_jobs.count()} pending face extraction job(s) to process'
+        self.stdout.write(job_count_message)
+        logger.info(job_count_message)
 
         for job in pending_jobs:
+            job_start_time = time.time()
             try:
                 with transaction.atomic():
                     # Update job status to processing
                     job.status = QueueJob.StatusChoices.PROCESSING
                     job.save()
 
-                    self.stdout.write(
-                        f'Processing face extraction job ID {job.id} for picture ID {job.picture.id}: {job.picture.title}'
-                    )
+                    processing_message = f'⚙️ Processing face extraction job ID {job.id} for picture ID {job.picture.id}: {job.picture.title}'
+                    self.stdout.write(processing_message)
+                    logger.info(processing_message)
 
                     # Get the image path
                     image_path = job.picture.image.path
@@ -118,38 +136,39 @@ class Command(BaseCommand):
                     job.status = QueueJob.StatusChoices.COMPLETED
                     job.save()
 
+                    job_duration = time.time() - job_start_time
                     processed_count += 1
-                    self.stdout.write(
-                        self.style.SUCCESS(
-                            f'Successfully processed face extraction job ID {job.id} for picture ID {job.picture.id}'
-                        )
-                    )
+                    success_message = f'✅ Successfully processed face extraction job ID {job.id} for picture ID {job.picture.id} in {job_duration:.2f}s'
+                    self.stdout.write(self.style.SUCCESS(success_message))
+                    logger.info(success_message)
 
             except Exception as e:
                 # Update job status to failed
                 job.status = QueueJob.StatusChoices.FAILED
                 job.save()
 
+                job_duration = time.time() - job_start_time
                 failed_count += 1
-                self.stdout.write(
-                    self.style.ERROR(
-                        f'Failed to process face extraction job ID {job.id} for picture ID {job.picture.id}: {str(e)}'
-                    )
-                )
-                logger.error(f'Face extraction job {job.id} failed: {str(e)}', exc_info=True)
+                error_message = f'❌ Failed to process face extraction job ID {job.id} for picture ID {job.picture.id} after {job_duration:.2f}s: {str(e)}'
+                self.stdout.write(self.style.ERROR(error_message))
+                logger.error(error_message, exc_info=True)
 
         return processed_count, failed_count
 
     def _extract_faces(self, picture, image_path, face_extraction_service):
         """Extract faces from the image and create FaceExtraction objects"""
         try:
-            self.stdout.write(f'Starting face extraction for picture ID {picture.id}: {picture.title}')
+            extraction_start_message = f'🔍 Starting face extraction for picture ID {picture.id}: {picture.title}'
+            self.stdout.write(extraction_start_message)
+            logger.info(extraction_start_message)
 
             # Extract faces using the service
             faces_data = face_extraction_service.extract_faces(image_path)
 
             if not faces_data:
-                self.stdout.write(f'No faces detected in picture ID {picture.id}')
+                no_faces_message = f'👤 No faces detected in picture ID {picture.id}'
+                self.stdout.write(no_faces_message)
+                logger.info(no_faces_message)
                 return
 
             # Delete existing face extractions for this picture to avoid duplicates
@@ -157,7 +176,9 @@ class Command(BaseCommand):
             if existing_extractions.exists():
                 deleted_count = existing_extractions.count()
                 existing_extractions.delete()
-                self.stdout.write(f'Removed {deleted_count} existing face extractions for picture ID {picture.id}')
+                cleanup_message = f'🧹 Removed {deleted_count} existing face extractions for picture ID {picture.id}'
+                self.stdout.write(cleanup_message)
+                logger.info(cleanup_message)
 
             # Create FaceExtraction objects for each detected face
             created_count = 0
@@ -171,20 +192,18 @@ class Command(BaseCommand):
                     confidence=face_data['confidence']
                 )
                 created_count += 1
-                self.stdout.write(
-                    f'Created face extraction ID {face_extraction.id}: '
+                face_created_message = (f'👤 Created face extraction ID {face_extraction.id}: '
                     f'bbox=({face_data["bbox_x"]}, {face_data["bbox_y"]}, {face_data["bbox_width"]}, {face_data["bbox_height"]}), '
-                    f'confidence={face_data["confidence"]:.3f}'
-                )
+                    f'confidence={face_data["confidence"]:.3f}')
+                self.stdout.write(face_created_message)
+                logger.info(face_created_message)
 
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f'Successfully extracted {created_count} faces from picture ID {picture.id}: {picture.title}'
-                )
-            )
+            success_extraction_message = f'✅ Successfully extracted {created_count} faces from picture ID {picture.id}: {picture.title}'
+            self.stdout.write(self.style.SUCCESS(success_extraction_message))
+            logger.info(success_extraction_message)
 
         except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'Failed to extract faces from picture ID {picture.id}: {str(e)}')
-            )
+            error_extraction_message = f'❌ Failed to extract faces from picture ID {picture.id}: {str(e)}'
+            self.stdout.write(self.style.ERROR(error_extraction_message))
+            logger.error(error_extraction_message, exc_info=True)
             raise  # Re-raise to mark job as failed

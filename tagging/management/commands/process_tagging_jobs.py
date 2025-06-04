@@ -2,6 +2,7 @@ import json
 import os
 import logging
 import platform
+import time
 from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.db import transaction
@@ -15,6 +16,12 @@ if platform.system() == 'Windows':
 else:
     import fcntl
 
+# Configure logging for this command
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - [TAGGING] - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -56,24 +63,29 @@ class Command(BaseCommand):
                         # Try to acquire exclusive lock (non-blocking) on Unix
                         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except (IOError, OSError):
-                    self.stdout.write(
-                        self.style.WARNING('Another tagging job processor is already running. Exiting.')
-                    )
+                    lock_message = '⚠️ Another tagging job processor is already running. Exiting.'
+                    self.stdout.write(self.style.WARNING(lock_message))
+                    logger.warning(lock_message)
                     return
 
-                self.stdout.write(
-                    self.style.SUCCESS(f'Starting tagging job processor (max_jobs: {max_jobs})...')
-                )
+                start_message = f'🏷️ Starting tagging job processor (max_jobs: {max_jobs})'
+                if model:
+                    start_message += f' using model: {model}'
+                self.stdout.write(self.style.SUCCESS(start_message))
+                logger.info(start_message)
 
                 # Initialize Ollama service
                 ollama_service = OllamaService()
 
                 # Check if Ollama server is running
                 if not ollama_service.is_server_running():
-                    self.stdout.write(
-                        self.style.ERROR('Ollama server is not running. Please start Ollama first.')
-                    )
+                    error_message = '❌ Ollama server is not running. Please start Ollama first.'
+                    self.stdout.write(self.style.ERROR(error_message))
+                    logger.error(error_message)
                     return
+                else:
+                    server_message = '✅ Ollama server is running'
+                    logger.info(server_message)
 
                 # Load the tags prompt and replace template variables
                 prompt_template = self._load_prompt_template()
@@ -86,45 +98,51 @@ class Command(BaseCommand):
                     self._process_jobs_continuously(ollama_service, prompt_template, model, max_jobs)
 
         except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'Error in tagging job processor: {str(e)}')
-            )
-            logger.error(f'Tagging job processor error: {str(e)}', exc_info=True)
+            error_message = f'❌ Error in tagging job processor: {str(e)}'
+            self.stdout.write(self.style.ERROR(error_message))
+            logger.error(error_message, exc_info=True)
         finally:
             # Clean up lock file
             if os.path.exists(lock_file_path):
                 os.remove(lock_file_path)
+                logger.info('🧹 Cleaned up lock file')
 
     def _process_jobs_once(self, ollama_service, prompt_template, model, max_jobs):
         """Process jobs once and exit"""
+        logger.info(f'🎯 Processing tagging jobs once (max: {max_jobs})')
         processed_count, failed_count = self._process_pending_jobs(ollama_service, prompt_template, model, max_jobs)
         
-        self.stdout.write(
-            self.style.SUCCESS(
-                f'Processing completed. Processed: {processed_count}, Failed: {failed_count}'
-            )
-        )
+        completion_message = f'✅ Tagging processing completed. Processed: {processed_count}, Failed: {failed_count}'
+        self.stdout.write(self.style.SUCCESS(completion_message))
+        logger.info(completion_message)
 
     def _process_jobs_continuously(self, ollama_service, prompt_template, model, max_jobs):
         """Process jobs continuously every 2 minutes"""
-        import time
         
-        self.stdout.write('Starting continuous processing (every 2 minutes)...')
+        start_message = '🔄 Starting continuous tagging processing (every 2 minutes)...'
+        self.stdout.write(start_message)
+        logger.info(start_message)
         
         try:
             while True:
+                logger.info('🏷️ Checking for pending tagging jobs...')
                 processed_count, failed_count = self._process_pending_jobs(ollama_service, prompt_template, model, max_jobs)
                 
                 if processed_count > 0 or failed_count > 0:
-                    self.stdout.write(
-                        f'Batch completed. Processed: {processed_count}, Failed: {failed_count}'
-                    )
+                    batch_message = f'📊 Tagging batch completed. Processed: {processed_count}, Failed: {failed_count}'
+                    self.stdout.write(batch_message)
+                    logger.info(batch_message)
+                else:
+                    logger.debug('No tagging jobs to process')
                 
+                logger.info('⏳ Waiting 2 minutes before next tagging check...')
                 # Wait 2 minutes before next check
                 time.sleep(120)
                 
         except KeyboardInterrupt:
-            self.stdout.write(self.style.WARNING('Tagging processor stopped by user'))
+            stop_message = '⚠️ Tagging processor stopped by user'
+            self.stdout.write(self.style.WARNING(stop_message))
+            logger.warning(stop_message)
 
     def _load_prompt_template(self):
         """Load and prepare the prompt template"""
@@ -132,10 +150,11 @@ class Command(BaseCommand):
         try:
             with open(prompt_path, 'r', encoding='utf-8') as f:
                 prompt_template = f.read()
+            logger.info(f'📄 Loaded prompt template from: {prompt_path}')
         except FileNotFoundError:
-            self.stdout.write(
-                self.style.ERROR(f'Tags prompt file not found at: {prompt_path}')
-            )
+            error_message = f'❌ Tags prompt file not found at: {prompt_path}'
+            self.stdout.write(self.style.ERROR(error_message))
+            logger.error(error_message)
             return None
 
         # Replace template variables
@@ -148,9 +167,11 @@ class Command(BaseCommand):
         
         if classifications.exists():
             classifications_text = ", ".join([f'"{cls.name}"' for cls in classifications])
+            logger.info(f'📂 Using {classifications.count()} tag classifications from database')
         else:
             # Default classifications if none exist in database
             classifications_text = '"Living Things", "Inanimate Objects", "Locations", "Actions", "Environmental", "Descriptive", "Temporal"'
+            logger.info('📂 Using default tag classifications')
         
         # Replace the template variable
         prompt_template = prompt_template.replace('{{classifications}}', classifications_text)
@@ -169,9 +190,9 @@ class Command(BaseCommand):
         )
         
         if processing_jobs.exists():
-            self.stdout.write(
-                self.style.WARNING(f'Tagging job already processing (ID: {processing_jobs.first().id}). Skipping this run.')
-            )
+            skip_message = f'⚠️ Tagging job already processing (ID: {processing_jobs.first().id}). Skipping this run.'
+            self.stdout.write(self.style.WARNING(skip_message))
+            logger.warning(skip_message)
             return processed_count, failed_count
 
         # Get pending tagging jobs
@@ -181,20 +202,24 @@ class Command(BaseCommand):
         ).select_related('picture').order_by('created_at')[:max_jobs]
 
         if not pending_jobs.exists():
+            logger.debug('No pending tagging jobs found')
             return processed_count, failed_count
 
-        self.stdout.write(f'Found {pending_jobs.count()} pending tagging job(s) to process.')
+        job_count_message = f'📋 Found {pending_jobs.count()} pending tagging job(s) to process'
+        self.stdout.write(job_count_message)
+        logger.info(job_count_message)
 
         for job in pending_jobs:
+            job_start_time = time.time()
             try:
                 with transaction.atomic():
                     # Update job status to processing
                     job.status = QueueJob.StatusChoices.PROCESSING
                     job.save()
 
-                    self.stdout.write(
-                        f'Processing tagging job ID {job.id} for picture ID {job.picture.id}: {job.picture.title}'
-                    )
+                    processing_message = f'⚙️ Processing tagging job ID {job.id} for picture ID {job.picture.id}: {job.picture.title}'
+                    self.stdout.write(processing_message)
+                    logger.info(processing_message)
 
                     # Get the image path
                     image_path = job.picture.image.path
@@ -207,11 +232,17 @@ class Command(BaseCommand):
                         available_models = ollama_service.get_vision_models()
                         if available_models:
                             vision_model = available_models[0]  # Use first available vision model
+                            logger.info(f'🤖 Using default vision model: {vision_model}')
                         else:
                             raise Exception('No vision models available')
+                    else:
+                        logger.info(f'🤖 Using specified model: {vision_model}')
 
                     # Generate tags using Ollama
-                    self.stdout.write(f'Generating tags using model: {vision_model}')
+                    generation_message = f'🧠 Generating tags using model: {vision_model}'
+                    self.stdout.write(generation_message)
+                    logger.info(generation_message)
+                    
                     response = ollama_service.generate_with_image(
                         prompt=prompt_template,
                         image_paths=image_path,
@@ -226,14 +257,16 @@ class Command(BaseCommand):
                         if json_start != -1 and json_end > json_start:
                             json_response = response[json_start:json_end]
                             tags_data = json.loads(json_response)
+                            logger.info('✅ Successfully parsed JSON response from AI')
                         else:
                             raise ValueError('No valid JSON found in response')
                     except (json.JSONDecodeError, ValueError) as e:
-                        self.stdout.write(
-                            self.style.WARNING(f'Failed to parse JSON response for job ID {job.id}: {e}')
-                        )
+                        parse_warning_message = f'⚠️ Failed to parse JSON response for job ID {job.id}: {e}'
+                        self.stdout.write(self.style.WARNING(parse_warning_message))
+                        logger.warning(parse_warning_message)
                         # Try to extract tags from plain text response
                         tags_data = self._extract_tags_from_text(response)
+                        logger.info('🔄 Using fallback text extraction for tags')
 
                     # Process and save tags
                     self._process_tags(job.picture, tags_data)
@@ -242,32 +275,32 @@ class Command(BaseCommand):
                     job.status = QueueJob.StatusChoices.COMPLETED
                     job.save()
 
+                    job_duration = time.time() - job_start_time
                     processed_count += 1
-                    self.stdout.write(
-                        self.style.SUCCESS(
-                            f'Successfully processed tagging job ID {job.id} for picture ID {job.picture.id}'
-                        )
-                    )
+                    success_message = f'✅ Successfully processed tagging job ID {job.id} for picture ID {job.picture.id} in {job_duration:.2f}s'
+                    self.stdout.write(self.style.SUCCESS(success_message))
+                    logger.info(success_message)
 
             except Exception as e:
                 # Update job status to failed
                 job.status = QueueJob.StatusChoices.FAILED
                 job.save()
 
+                job_duration = time.time() - job_start_time
                 failed_count += 1
-                self.stdout.write(
-                    self.style.ERROR(
-                        f'Failed to process tagging job ID {job.id} for picture ID {job.picture.id}: {str(e)}'
-                    )
-                )
-                logger.error(f'Tagging job {job.id} failed: {str(e)}', exc_info=True)
+                error_message = f'❌ Failed to process tagging job ID {job.id} for picture ID {job.picture.id} after {job_duration:.2f}s: {str(e)}'
+                self.stdout.write(self.style.ERROR(error_message))
+                logger.error(error_message, exc_info=True)
 
         return processed_count, failed_count
 
     def _process_tags(self, picture, tags_data):
         """Process and save tags to the picture with classifications"""
         if not isinstance(tags_data, dict):
+            logger.warning(f'Invalid tags data format for picture ID {picture.id}')
             return
+
+        logger.info(f'🏷️ Processing tags for picture ID {picture.id}: {picture.title}')
 
         # Handle the new structure with tags_with_classifications array
         if 'tags_with_classifications' in tags_data:
@@ -282,9 +315,11 @@ class Command(BaseCommand):
                         classification_name = tag_obj['classification']
                         
                         # Get or create the classification
-                        classification, _ = TagClassification.objects.get_or_create(
+                        classification, created = TagClassification.objects.get_or_create(
                             name=classification_name
                         )
+                        if created:
+                            logger.info(f'📂 Created new tag classification: {classification_name}')
                         
                         if tag_name and isinstance(tag_name, str):
                             all_tags.append((tag_name, classification))
@@ -297,9 +332,11 @@ class Command(BaseCommand):
                         classification_name = category_data.get('classification', 'General')
                         
                         # Get or create the classification
-                        classification, _ = TagClassification.objects.get_or_create(
+                        classification, created = TagClassification.objects.get_or_create(
                             name=classification_name
                         )
+                        if created:
+                            logger.info(f'📂 Created new tag classification: {classification_name}')
                         
                         for tag_name in tags_list:
                             if tag_name and isinstance(tag_name, str):
@@ -328,16 +365,18 @@ class Command(BaseCommand):
             if not created and not tag.classification and classification:
                 tag.classification = classification
                 tag.save()
+                logger.info(f'🏷️ Updated classification for existing tag: {tag.name}')
             
             picture.tags.add(tag)
             if created:
                 created_tags_count += 1
-                self.stdout.write(f'Created new tag ID {tag.id}: {tag.name} (Classification: {classification.name if classification else "None"})')
+                tag_created_message = f'🏷️ Created new tag ID {tag.id}: {tag.name} (Classification: {classification.name if classification else "None"})'
+                self.stdout.write(tag_created_message)
+                logger.info(tag_created_message)
 
-        self.stdout.write(
-            f'Added {len(all_tags)} tags to picture ID {picture.id}: {picture.title} '
-            f'({created_tags_count} new tags created)'
-        )
+        tags_summary_message = f'✅ Added {len(all_tags)} tags to picture ID {picture.id}: {picture.title} ({created_tags_count} new tags created)'
+        self.stdout.write(tags_summary_message)
+        logger.info(tags_summary_message)
 
     def _extract_tags_from_text(self, text):
         """Fallback method to extract tags from plain text response"""
