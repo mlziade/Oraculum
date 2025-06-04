@@ -16,8 +16,7 @@ def start():
     global scheduler
     
     # Don't start scheduler during tests, migrations, or other administrative commands
-    if any(cmd in sys.argv for cmd in ['test', 'collectstatic', 'makemigrations', 
-                                       'migrate', 'shell', 'runserver']):
+    if any(cmd in sys.argv for cmd in ['test', 'collectstatic', 'makemigrations', 'migrate', 'shell']):
         logger.info("Scheduler not started - running administrative command")
         return
 
@@ -26,21 +25,20 @@ def start():
         logger.info("Scheduler already running")
         return
 
-    scheduler = BackgroundScheduler()    # Schedule face extraction jobs to run every 30 seconds
+    scheduler = BackgroundScheduler()    
     scheduler.add_job(
         lambda: management.call_command('process_face_extraction_jobs', max_jobs=5, run_once=True),
         'interval',
-        seconds=30,
+        seconds=30, # Schedule face extraction jobs to run every 30 seconds
         id='face_extraction_job',
         replace_existing=True,
         max_instances=1  # Prevent overlapping executions
     )
 
-    # Schedule tagging jobs to run every 2 minutes
     scheduler.add_job(
         lambda: management.call_command('process_tagging_jobs', max_jobs=3, run_once=True),
         'interval',
-        minutes=2,
+        minutes=2, # Schedule tagging jobs to run every 2 minutes
         id='tagging_job',
         replace_existing=True,
         max_instances=1  # Prevent overlapping executions
