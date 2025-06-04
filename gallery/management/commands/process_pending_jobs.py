@@ -7,26 +7,27 @@ from gallery.ollama import OllamaService
 
 
 class Command(BaseCommand):
-    help = 'Process pending jobs in the processing queue using Ollama vision models'
+    help = 'Process one pending job in the processing queue using Ollama vision models (single job execution)'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--max-jobs',
             type=int,
-            default=10,
-            help='Maximum number of jobs to process in one run (default: 10)'
+            default=1,
+            help='Maximum number of jobs to process in one run (default: 1, forced to 1 for single execution)'
         )
         parser.add_argument(
             '--model',
             type=str,
             help='Specific Ollama model to use (must be vision-capable)'
         )
-
+    
     def handle(self, *args, **options):
-        max_jobs = options['max_jobs']
+        # Force max_jobs to 1 for single job execution
+        max_jobs = 1
         model = options.get('model')
         
-        self.stdout.write(self.style.SUCCESS(f'Starting to process up to {max_jobs} pending jobs...'))
+        self.stdout.write(self.style.SUCCESS('Starting to process 1 pending job (single execution mode)...'))
         
         # Initialize Ollama service
         ollama_service = OllamaService()
@@ -48,92 +49,100 @@ class Command(BaseCommand):
                 self.style.ERROR(f'Tags prompt file not found at: {prompt_path}')
             )
             return
-        
-        # Replace template variables
+          # Replace template variables
         prompt_template = self._replace_template_variables(prompt_template)
         
-        # Get pending jobs
-        pending_jobs = ProcessingQueue.objects.filter(
-            status=ProcessingQueue.StatusChoices.PENDING
-        ).select_related('picture').order_by('created_at')[:max_jobs]
+        # Check if any job is currently processing
+        processing_jobs = ProcessingQueue.objects.filter(
+            status=ProcessingQueue.StatusChoices.PROCESSING
+        )
         
-        if not pending_jobs:
-            self.stdout.write(self.style.WARNING('No pending jobs found.'))
+        if processing_jobs.exists():
+            self.stdout.write(
+                self.style.WARNING(f'Job already processing (ID: {processing_jobs.first().id}). Skipping this run.')
+            )
             return
         
-        self.stdout.write(f'Found {len(pending_jobs)} pending jobs to process.')
+        # Get only one pending job to process
+        pending_job = ProcessingQueue.objects.filter(
+            status=ProcessingQueue.StatusChoices.PENDING
+        ).select_related('picture').order_by('created_at').first()
+        
+        if not pending_job:
+            self.stdout.write(self.style.WARNING('No pending jobs found.'))
+            return        self.stdout.write(f'Found 1 pending job to process (ID: {pending_job.id}).')
         
         processed_count = 0
         failed_count = 0
         
-        for job in pending_jobs:
+        job = pending_job
+        try:
+            self.stdout.write(f'Processing job ID {job.id} for picture ID {job.picture.id}: {job.picture.title}')
+            
+            # Update job status to processing
+            job.status = ProcessingQueue.StatusChoices.PROCESSING
+            job.save()
+            
+            # Get the image path
+            image_path = job.picture.image.path
+            if not os.path.exists(image_path):
+                raise Exception(f'Image file not found: {image_path}')
+            
+            # Use specified model or default vision model
+            vision_model = model
+            if not vision_model:
+                available_models = ollama_service.get_vision_models()
+                if available_models:
+                    vision_model = available_models[0]  # Use first available vision model
+                else:
+                    raise Exception('No vision models available')
+            
+            # Generate tags using Ollama
+            self.stdout.write(f'Generating tags using model: {vision_model}')
+            response = ollama_service.generate_with_image(
+                prompt=prompt_template,
+                image_paths=image_path,
+                model=vision_model
+            )
+            
+            # Parse the JSON response
             try:
-                self.stdout.write(f'Processing job ID {job.id} for picture ID {job.picture.id}: {job.picture.title}')
-                
-                # Update job status to processing
-                job.status = ProcessingQueue.StatusChoices.PROCESSING
-                job.save()
-                
-                # Get the image path
-                image_path = job.picture.image.path
-                if not os.path.exists(image_path):
-                    raise Exception(f'Image file not found: {image_path}')
-                
-                # Use specified model or default vision model
-                vision_model = model
-                if not vision_model:
-                    available_models = ollama_service.get_vision_models()
-                    if available_models:
-                        vision_model = available_models[0]  # Use first available vision model
-                    else:
-                        raise Exception('No vision models available')
-                
-                # Generate tags using Ollama
-                self.stdout.write(f'Generating tags using model: {vision_model}')
-                response = ollama_service.generate_with_image(
-                    prompt=prompt_template,
-                    image_paths=image_path,
-                    model=vision_model
-                )
-                
-                # Parse the JSON response
-                try:
-                    # Extract JSON from response (in case there's additional text)
-                    json_start = response.find('{')
-                    json_end = response.rfind('}') + 1
-                    if json_start != -1 and json_end > json_start:
-                        json_response = response[json_start:json_end]
-                        tags_data = json.loads(json_response)
-                    else:
-                        raise ValueError('No valid JSON found in response')
-                except (json.JSONDecodeError, ValueError) as e:
-                    self.stdout.write(
-                        self.style.WARNING(f'Failed to parse JSON response for job ID {job.id}: {e}')
-                    )
-                    # Try to extract tags from plain text response
-                    tags_data = self._extract_tags_from_text(response)
-                
-                # Process and save tags
-                self._process_tags(job.picture, tags_data)
-                
-                # Update job status to completed
-                job.status = ProcessingQueue.StatusChoices.COMPLETED
-                job.save()
-                
-                processed_count += 1
+                # Extract JSON from response (in case there's additional text)
+                json_start = response.find('{')
+                json_end = response.rfind('}') + 1
+                if json_start != -1 and json_end > json_start:
+                    json_response = response[json_start:json_end]
+                    tags_data = json.loads(json_response)
+                else:
+                    raise ValueError('No valid JSON found in response')
+            except (json.JSONDecodeError, ValueError) as e:
                 self.stdout.write(
-                    self.style.SUCCESS(f'Successfully processed job ID {job.id} for picture ID {job.picture.id}')
+                    self.style.WARNING(f'Failed to parse JSON response for job ID {job.id}: {e}')
                 )
-                
-            except Exception as e:
-                # Update job status to failed
-                job.status = ProcessingQueue.StatusChoices.FAILED
-                job.save()
-                
-                failed_count += 1
-                self.stdout.write(
-                    self.style.ERROR(f'Failed to process job ID {job.id} for picture ID {job.picture.id}: {str(e)}')
-                )
+                # Try to extract tags from plain text response
+                tags_data = self._extract_tags_from_text(response)
+            
+            # Process and save tags
+            self._process_tags(job.picture, tags_data)
+            
+            # Update job status to completed
+            job.status = ProcessingQueue.StatusChoices.COMPLETED
+            job.save()
+            
+            processed_count += 1
+            self.stdout.write(
+                self.style.SUCCESS(f'Successfully processed job ID {job.id} for picture ID {job.picture.id}')
+            )
+            
+        except Exception as e:
+            # Update job status to failed
+            job.status = ProcessingQueue.StatusChoices.FAILED
+            job.save()
+            
+            failed_count += 1
+            self.stdout.write(
+                self.style.ERROR(f'Failed to process job ID {job.id} for picture ID {job.picture.id}: {str(e)}')
+            )
         
         # Summary
         self.stdout.write(
