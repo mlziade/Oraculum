@@ -26,23 +26,21 @@ def start():
         logger.info("Scheduler already running")
         return
 
-    scheduler = BackgroundScheduler()
-
-    # Schedule face extraction jobs to run every 5 minutes
+    scheduler = BackgroundScheduler()    # Schedule face extraction jobs to run every 30 seconds
     scheduler.add_job(
         lambda: management.call_command('process_face_extraction_jobs', max_jobs=5, run_once=True),
         'interval',
-        minutes=5,
+        seconds=30,
         id='face_extraction_job',
         replace_existing=True,
         max_instances=1  # Prevent overlapping executions
     )
 
-    # Schedule tagging jobs to run every 10 minutes
+    # Schedule tagging jobs to run every 2 minutes
     scheduler.add_job(
         lambda: management.call_command('process_tagging_jobs', max_jobs=3, run_once=True),
         'interval',
-        minutes=10,
+        minutes=2,
         id='tagging_job',
         replace_existing=True,
         max_instances=1  # Prevent overlapping executions
