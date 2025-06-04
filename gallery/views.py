@@ -69,14 +69,19 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
         Get the status of a specific processing job by ID.
         """
         try:
-            job = get_object_or_404(ProcessingQueue, pk=pk)
+            job = get_object_or_404(
+                ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags').only(
+                    'id', 'status', 'created_at', 'updated_at',
+                    'picture__id', 'picture__title', 'picture__description'
+                ),
+                pk=pk
+            )
             
             # Get associated picture and tags
             picture_data = {
                 'id': job.picture.id,
                 'title': job.picture.title,
                 'description': job.picture.description,
-                'image_url': job.picture.image.url if job.picture.image else None,
                 'tags': [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
             }
             
@@ -101,8 +106,19 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
         List all processing jobs with optional status filtering.
         """
         status_filter = request.query_params.get('status', None)
+        include_tags = request.query_params.get('tags', 'false').lower() == 'true'
         
-        queryset = ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags')
+        # Optimize query based on whether tags are needed
+        if include_tags:
+            queryset = ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags').only(
+                'id', 'status', 'created_at', 'updated_at',
+                'picture__id', 'picture__title', 'picture__description'
+            )
+        else:
+            queryset = ProcessingQueue.objects.select_related('picture').only(
+                'id', 'status', 'created_at', 'updated_at',
+                'picture__id', 'picture__title', 'picture__description'
+            )
         
         if status_filter:
             queryset = queryset.filter(status=status_filter)
@@ -113,9 +129,11 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
                 'id': job.picture.id,
                 'title': job.picture.title,
                 'description': job.picture.description,
-                'image_url': job.picture.image.url if job.picture.image else None,
-                'tags': [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
             }
+            
+            # Only include tags if requested
+            if include_tags:
+                picture_data['tags'] = [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
             
             jobs.append({
                 'job_id': job.id,
