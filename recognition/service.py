@@ -3,7 +3,6 @@ import numpy as np
 import os
 import logging
 from typing import List, Dict, Any
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 

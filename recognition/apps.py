@@ -1,10 +1,10 @@
 from django.apps import AppConfig
 
 
-class GalleryConfig(AppConfig):
+class RecognitionConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'gallery'
-    verbose_name = 'Gallery'
+    name = 'recognition'
+    verbose_name = 'Face Recognition'
     
     def ready(self):
         """
