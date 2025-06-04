@@ -1,13 +1,27 @@
+import os
+import uuid
 from django.db import models
+
+def hash_upload_path(instance, filename):
+    """Generate a random hash filename while preserving the extension."""
+    ext = os.path.splitext(filename)[1]  # Get the file extension
+    random_filename = f"{uuid.uuid4().hex}{ext}"
+    return os.path.join('pictures/', random_filename)
+
+def miniature_upload_path(instance, filename):
+    """Generate a random hash filename for miniatures while preserving the extension."""
+    ext = os.path.splitext(filename)[1]  # Get the file extension
+    random_filename = f"{uuid.uuid4().hex}{ext}"
+    return os.path.join('miniatures/', random_filename)
 
 class Picture(models.Model):
     id = models.BigAutoField(primary_key=True, help_text="Primary key for the picture")
     title = models.CharField(max_length=255, help_text="Title of the picture")
-    image = models.ImageField(upload_to='pictures/', help_text="Image file of the picture")
+    image = models.ImageField(upload_to=hash_upload_path, help_text="Image file of the picture")
     description = models.TextField(blank=True, null=True, help_text="Description of the picture")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Date and time when the picture was created")
     updated_at = models.DateTimeField(auto_now=True, help_text="Date and time when the picture was last updated")
-    miniature = models.ImageField(upload_to='miniatures/', blank=True, null=True, help_text="Miniature version of this picture (optional)")
+    miniature = models.ImageField(upload_to=miniature_upload_path, blank=True, null=True, help_text="Miniature version of this picture (optional)")
     tags = models.ManyToManyField('Tag', blank=True, related_name='pictures', help_text="Tags associated with this picture")
 
     def __str__(self):
