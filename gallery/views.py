@@ -3,7 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action
-from .models import Picture, Tag, ProcessingQueue
+from .models import Picture, Tag, ProcessingQueue, FaceExtraction
 import os
 
 class UploadPictureViewSet(viewsets.ViewSet):
@@ -63,14 +63,21 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
     """
     ViewSet for checking processing queue status.
     """
-    
     def retrieve(self, request, pk=None):
         """
         Get the status of a specific processing job by ID.
         """
         try:
+            include_faces = request.query_params.get('faces', 'false').lower() == 'true'
+            
+            # Build queryset with optimized prefetching
+            queryset = ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags')
+            
+            if include_faces:
+                queryset = queryset.prefetch_related('picture__face_extractions')
+            
             job = get_object_or_404(
-                ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags').only(
+                queryset.only(
                     'id', 'status', 'created_at', 'updated_at',
                     'picture__id', 'picture__title', 'picture__description'
                 ),
@@ -84,6 +91,21 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
                 'description': job.picture.description,
                 'tags': [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
             }
+            
+            # Include face extractions if requested
+            if include_faces:
+                picture_data['face_extractions'] = [
+                    {
+                        'id': face.id,
+                        'bbox_x': face.bbox_x,
+                        'bbox_y': face.bbox_y,
+                        'bbox_width': face.bbox_width,
+                        'bbox_height': face.bbox_height,
+                        'confidence': face.confidence,
+                        'created_at': face.created_at
+                    }
+                    for face in job.picture.face_extractions.all()
+                ]
             
             response_data = {
                 'job_id': job.id,
@@ -107,18 +129,21 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
         """
         status_filter = request.query_params.get('status', None)
         include_tags = request.query_params.get('tags', 'false').lower() == 'true'
+        include_faces = request.query_params.get('faces', 'false').lower() == 'true'
         
-        # Optimize query based on whether tags are needed
+        # Optimize query based on whether tags and faces are needed
+        queryset = ProcessingQueue.objects.select_related('picture')
+        
         if include_tags:
-            queryset = ProcessingQueue.objects.select_related('picture').prefetch_related('picture__tags').only(
-                'id', 'status', 'created_at', 'updated_at',
-                'picture__id', 'picture__title', 'picture__description'
-            )
-        else:
-            queryset = ProcessingQueue.objects.select_related('picture').only(
-                'id', 'status', 'created_at', 'updated_at',
-                'picture__id', 'picture__title', 'picture__description'
-            )
+            queryset = queryset.prefetch_related('picture__tags')
+        
+        if include_faces:
+            queryset = queryset.prefetch_related('picture__face_extractions')
+        
+        queryset = queryset.only(
+            'id', 'status', 'created_at', 'updated_at',
+            'picture__id', 'picture__title', 'picture__description'
+        )
         
         if status_filter:
             queryset = queryset.filter(status=status_filter)
@@ -134,6 +159,21 @@ class ProcessingQueueViewSet(viewsets.ViewSet):
             # Only include tags if requested
             if include_tags:
                 picture_data['tags'] = [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
+            
+            # Only include face extractions if requested
+            if include_faces:
+                picture_data['face_extractions'] = [
+                    {
+                        'id': face.id,
+                        'bbox_x': face.bbox_x,
+                        'bbox_y': face.bbox_y,
+                        'bbox_width': face.bbox_width,
+                        'bbox_height': face.bbox_height,
+                        'confidence': face.confidence,
+                        'created_at': face.created_at
+                    }
+                    for face in job.picture.face_extractions.all()
+                ]
             
             jobs.append({
                 'job_id': job.id,

@@ -78,3 +78,23 @@ class ProcessingQueue(models.Model):
         verbose_name = "Processing Queue"
         verbose_name_plural = "Processing Queues"
         ordering = ['created_at']
+
+class FaceExtraction(models.Model):
+    id = models.BigAutoField(primary_key=True, help_text="Primary key for the face extraction")
+    picture = models.ForeignKey(Picture, on_delete=models.CASCADE, related_name='face_extractions', help_text="Picture from which faces are extracted")
+    face_image = models.ImageField(upload_to=hash_upload_path, help_text="Extracted face image")
+    bbox_x = models.IntegerField(help_text="X coordinate of the bounding box top-left corner")
+    bbox_y = models.IntegerField(help_text="Y coordinate of the bounding box top-left corner")
+    bbox_width = models.IntegerField(help_text="Width of the bounding box")
+    bbox_height = models.IntegerField(help_text="Height of the bounding box")
+    confidence = models.FloatField(help_text="Confidence score of the face detection")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Date and time when the face extraction was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Date and time when the face extraction was last updated")
+
+    def __str__(self):
+        return f"Face Extraction from {self.picture.title}"
+
+    class Meta:
+        verbose_name = "Face Extraction"
+        verbose_name_plural = "Face Extractions"
+        ordering = ['created_at']

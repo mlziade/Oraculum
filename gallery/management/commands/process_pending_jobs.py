@@ -2,8 +2,9 @@ import json
 import os
 from django.core.management.base import BaseCommand
 from django.conf import settings
-from gallery.models import ProcessingQueue, Picture, Tag, TagClassification
+from gallery.models import ProcessingQueue, Picture, Tag, TagClassification, FaceExtraction
 from gallery.ollama import OllamaService
+from gallery.face_extraction import FaceExtractionService
 
 
 class Command(BaseCommand):
@@ -28,9 +29,18 @@ class Command(BaseCommand):
         model = options.get('model')
         
         self.stdout.write(self.style.SUCCESS('Starting to process 1 pending job (single execution mode)...'))
-        
         # Initialize Ollama service
         ollama_service = OllamaService()
+        
+        # Initialize Face Extraction service
+        try:
+            face_extraction_service = FaceExtractionService()
+            self.stdout.write('Face extraction service initialized successfully')
+        except Exception as e:
+            self.stdout.write(
+                self.style.WARNING(f'Face extraction service initialization failed: {str(e)}')
+            )
+            face_extraction_service = None
         
         # Check if Ollama server is running
         if not ollama_service.is_server_running():
@@ -49,7 +59,7 @@ class Command(BaseCommand):
                 self.style.ERROR(f'Tags prompt file not found at: {prompt_path}')
             )
             return
-          # Replace template variables
+        # Replace template variables
         prompt_template = self._replace_template_variables(prompt_template)
         
         # Check if any job is currently processing
@@ -70,7 +80,9 @@ class Command(BaseCommand):
         
         if not pending_job:
             self.stdout.write(self.style.WARNING('No pending jobs found.'))
-            return        self.stdout.write(f'Found 1 pending job to process (ID: {pending_job.id}).')
+            return
+        
+        self.stdout.write(f'Found 1 pending job to process (ID: {pending_job.id}).')
         
         processed_count = 0
         failed_count = 0
@@ -124,6 +136,10 @@ class Command(BaseCommand):
             
             # Process and save tags
             self._process_tags(job.picture, tags_data)
+            
+            # Extract faces from the image
+            if face_extraction_service:
+                self._extract_faces(job.picture, image_path, face_extraction_service)
             
             # Update job status to completed
             job.status = ProcessingQueue.StatusChoices.COMPLETED
@@ -255,3 +271,53 @@ class Command(BaseCommand):
         tags_data["general"] = potential_tags[:20]  # Limit to 20 tags
         
         return tags_data
+    
+    def _extract_faces(self, picture, image_path, face_extraction_service):
+        """Extract faces from the image and create FaceExtraction objects"""
+        try:
+            self.stdout.write(f'Starting face extraction for picture ID {picture.id}: {picture.title}')
+            
+            # Extract faces using the service
+            faces_data = face_extraction_service.extract_faces(image_path)
+            
+            if not faces_data:
+                self.stdout.write(f'No faces detected in picture ID {picture.id}')
+                return
+            
+            # Delete existing face extractions for this picture to avoid duplicates
+            existing_extractions = FaceExtraction.objects.filter(picture=picture)
+            if existing_extractions.exists():
+                deleted_count = existing_extractions.count()
+                existing_extractions.delete()
+                self.stdout.write(f'Removed {deleted_count} existing face extractions for picture ID {picture.id}')
+            
+            # Create FaceExtraction objects for each detected face
+            created_count = 0
+            for face_data in faces_data:
+                face_extraction = FaceExtraction.objects.create(
+                    picture=picture,
+                    face_image=None,  # As requested, not generating face_image for now
+                    bbox_x=face_data['bbox_x'],
+                    bbox_y=face_data['bbox_y'],
+                    bbox_width=face_data['bbox_width'],
+                    bbox_height=face_data['bbox_height'],
+                    confidence=face_data['confidence']
+                )
+                created_count += 1
+                self.stdout.write(
+                    f'Created face extraction ID {face_extraction.id}: '
+                    f'bbox=({face_data["bbox_x"]}, {face_data["bbox_y"]}, {face_data["bbox_width"]}, {face_data["bbox_height"]}), '
+                    f'confidence={face_data["confidence"]:.3f}'
+                )
+            
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f'Successfully extracted {created_count} faces from picture ID {picture.id}: {picture.title}'
+                )
+            )
+            
+        except Exception as e:
+            self.stdout.write(
+                self.style.ERROR(f'Failed to extract faces from picture ID {picture.id}: {str(e)}')
+            )
+            # Don't raise the exception - face extraction failure shouldn't fail the entire job
