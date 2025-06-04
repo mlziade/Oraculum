@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Picture, Tag, ProcessingQueue
+from .models import Picture, Tag, ProcessingQueue, TagClassification
 
 @admin.register(Picture)
 class PictureAdmin(admin.ModelAdmin):
@@ -8,6 +8,12 @@ class PictureAdmin(admin.ModelAdmin):
     search_fields = ('title', 'description')
     filter_horizontal = ('tags',)
     readonly_fields = ('id', 'created_at', 'updated_at')
+
+@admin.register(TagClassification)
+class TagClassificationAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name')
+    search_fields = ('name',)
+    readonly_fields = ('id',)
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):

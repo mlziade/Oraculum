@@ -2,7 +2,7 @@ import json
 import os
 from django.core.management.base import BaseCommand
 from django.conf import settings
-from gallery.models import ProcessingQueue, Picture, Tag
+from gallery.models import ProcessingQueue, Picture, Tag, TagClassification
 from gallery.ollama import OllamaService
 
 
@@ -38,7 +38,7 @@ class Command(BaseCommand):
             )
             return
         
-        # Load the tags prompt
+        # Load the tags prompt and replace template variables
         prompt_path = os.path.join(settings.BASE_DIR, 'gallery', 'prompts', 'tags_prompt.txt')
         try:
             with open(prompt_path, 'r', encoding='utf-8') as f:
@@ -48,6 +48,9 @@ class Command(BaseCommand):
                 self.style.ERROR(f'Tags prompt file not found at: {prompt_path}')
             )
             return
+        
+        # Replace template variables
+        prompt_template = self._replace_template_variables(prompt_template)
         
         # Get pending jobs
         pending_jobs = ProcessingQueue.objects.filter(
@@ -139,29 +142,91 @@ class Command(BaseCommand):
             )
         )
     
+    def _replace_template_variables(self, prompt_template):
+        """Replace template variables in the prompt with actual data"""
+        # Get all tag classifications from the database
+        classifications = TagClassification.objects.all()
+        
+        if classifications.exists():
+            classifications_text = ", ".join([f'"{cls.name}"' for cls in classifications])
+        else:
+            # Default classifications if none exist in database
+            classifications_text = '"Living Things", "Inanimate Objects", "Locations", "Actions", "Environmental", "Descriptive", "Temporal"'
+        
+        # Replace the template variable
+        prompt_template = prompt_template.replace('{{classifications}}', classifications_text)
+        
+        return prompt_template
+    
     def _process_tags(self, picture, tags_data):
-        """Process and save tags to the picture"""
+        """Process and save tags to the picture with classifications"""
         if not isinstance(tags_data, dict):
             return
         
-        # Collect all tags from all categories
-        all_tags = []
-        for category, tags_list in tags_data.items():
-            if isinstance(tags_list, list):
-                all_tags.extend(tags_list)
+        # Handle the new structure with tags_with_classifications array
+        if 'tags_with_classifications' in tags_data:
+            tags_array = tags_data['tags_with_classifications']
+            
+            # Process new array format: [{"tag": "dog", "classification": "Living Things"}, ...]
+            if isinstance(tags_array, list):
+                all_tags = []
+                for tag_obj in tags_array:
+                    if isinstance(tag_obj, dict) and 'tag' in tag_obj and 'classification' in tag_obj:
+                        tag_name = tag_obj['tag']
+                        classification_name = tag_obj['classification']
+                        
+                        # Get or create the classification
+                        classification, _ = TagClassification.objects.get_or_create(
+                            name=classification_name
+                        )
+                        
+                        if tag_name and isinstance(tag_name, str):
+                            all_tags.append((tag_name, classification))
+            else:
+                # Handle legacy nested format
+                all_tags = []
+                for category, category_data in tags_array.items():
+                    if isinstance(category_data, dict):
+                        tags_list = category_data.get('tags', [])
+                        classification_name = category_data.get('classification', 'General')
+                        
+                        # Get or create the classification
+                        classification, _ = TagClassification.objects.get_or_create(
+                            name=classification_name
+                        )
+                        
+                        for tag_name in tags_list:
+                            if tag_name and isinstance(tag_name, str):
+                                all_tags.append((tag_name, classification))
+        else:
+            # Handle legacy format without classifications
+            all_tags = []
+            for category, tags_list in tags_data.items():
+                if isinstance(tags_list, list):
+                    for tag_name in tags_list:
+                        if tag_name and isinstance(tag_name, str):
+                            all_tags.append((tag_name, None))
         
         # Create or get tags and associate with picture
         created_tags_count = 0
-        for tag_name in all_tags:
-            if tag_name and isinstance(tag_name, str):
-                tag, created = Tag.objects.get_or_create(
-                    name=tag_name.lower().strip(),
-                    defaults={'description': f'Auto-generated tag from image analysis'}
-                )
-                picture.tags.add(tag)
-                if created:
-                    created_tags_count += 1
-                    self.stdout.write(f'Created new tag ID {tag.id}: {tag.name}')
+        for tag_name, classification in all_tags:
+            tag, created = Tag.objects.get_or_create(
+                name=tag_name.lower().strip(),
+                defaults={
+                    'description': f'Auto-generated tag from image analysis',
+                    'classification': classification
+                }
+            )
+            
+            # Update classification if tag exists but doesn't have one
+            if not created and not tag.classification and classification:
+                tag.classification = classification
+                tag.save()
+            
+            picture.tags.add(tag)
+            if created:
+                created_tags_count += 1
+                self.stdout.write(f'Created new tag ID {tag.id}: {tag.name} (Classification: {classification.name if classification else "None"})')
         
         self.stdout.write(
             f'Added {len(all_tags)} tags to picture ID {picture.id}: {picture.title} '
