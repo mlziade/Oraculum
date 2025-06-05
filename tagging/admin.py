@@ -11,7 +11,7 @@ class TagClassificationAdmin(admin.ModelAdmin):
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'classification', 'description')
+    list_display = ('id', 'name', 'classification')
     list_filter = ('classification',)
-    search_fields = ('name', 'description')
+    search_fields = ('name',)
     readonly_fields = ('id',)

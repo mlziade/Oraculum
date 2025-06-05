@@ -17,7 +17,7 @@ class TagSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Tag
-        fields = ['id', 'name', 'description', 'classification']
+        fields = ['id', 'name', 'classification']
 
 
 class PictureSerializer(serializers.ModelSerializer):

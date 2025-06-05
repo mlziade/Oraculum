@@ -348,15 +348,12 @@ class Command(BaseCommand):
                 if isinstance(tags_list, list):
                     for tag_name in tags_list:
                         if tag_name and isinstance(tag_name, str):
-                            all_tags.append((tag_name, None))
-
-        # Create or get tags and associate with picture
+                            all_tags.append((tag_name, None))        # Create or get tags and associate with picture
         created_tags_count = 0
         for tag_name, classification in all_tags:
             tag, created = Tag.objects.get_or_create(
                 name=tag_name.lower().strip(),
                 defaults={
-                    'description': f'Auto-generated tag from image analysis',
                     'classification': classification
                 }
             )
