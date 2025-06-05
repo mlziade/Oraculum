@@ -231,8 +231,14 @@ class Command(BaseCommand):
                     if not vision_model:
                         available_models = ollama_service.get_vision_models()
                         if available_models:
-                            vision_model = available_models[0]  # Use first available vision model
-                            logger.info(f'🤖 Using default vision model: {vision_model}')
+                            # Try to use default model from settings first
+                            default_model = getattr(settings, 'OLLAMA_DEFAULT_MODEL', None)
+                            if default_model and default_model in available_models:
+                                vision_model = default_model
+                                logger.info(f'🤖 Using default vision model from settings: {vision_model}')
+                            else:
+                                vision_model = available_models[0]  # Use first available vision model
+                                logger.info(f'🤖 Using first available vision model: {vision_model}')
                         else:
                             raise Exception('No vision models available')
                     else:
