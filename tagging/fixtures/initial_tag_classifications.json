@@ -38,14 +38,7 @@
     "model": "gallery.tagclassification",
     "pk": 6,
     "fields": {
-      "name": "Descriptive"
-    }
-  },
-  {
-    "model": "gallery.tagclassification",
-    "pk": 7,
-    "fields": {
-      "name": "Temporal"
+      "name": "People"
     }
   }
 ]
