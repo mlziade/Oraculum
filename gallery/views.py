@@ -33,9 +33,20 @@ class UploadPictureViewSet(viewsets.ViewSet):
         title = request.data.get('title', os.path.splitext(image_file.name)[0])
           # Get optional description
         description = request.data.get('description', '')
-        
-        # Get jobs array from URL query parameters
+          # Get jobs array from URL query parameters
         jobs = request.query_params.getlist('jobs')
+        
+        # Handle legacy 'face_extraction' job type by converting to both haar and dnn
+        processed_jobs = []
+        for job in jobs:
+            if job == 'face_extraction':
+                # Convert legacy job type to both new types
+                processed_jobs.extend(['face_extraction_haar', 'face_extraction_dnn'])
+            else:
+                processed_jobs.append(job)
+        
+        # Remove duplicates while preserving order
+        jobs = list(dict.fromkeys(processed_jobs))
         
         # Validate job types if provided
         valid_job_types = [choice[0] for choice in QueueJob.JobTypeChoices.choices]

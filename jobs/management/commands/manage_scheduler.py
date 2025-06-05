@@ -90,7 +90,12 @@ class Command(BaseCommand):
             if max_jobs:
                 kwargs['max_jobs'] = max_jobs
             
-            management.call_command('process_face_extraction_jobs', **kwargs)
+            self.stdout.write('   Triggering Haar Cascade extraction...')
+            management.call_command('process_haar_extraction_jobs', **kwargs)
+            
+            self.stdout.write('   Triggering DNN extraction...')
+            management.call_command('process_dnn_extraction_jobs', **kwargs)
+            
             self.stdout.write(self.style.SUCCESS('✅ Face extraction jobs triggered'))
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'❌ Failed to trigger face extraction jobs: {e}'))

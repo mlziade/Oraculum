@@ -26,11 +26,23 @@ def start():
         return
 
     scheduler = BackgroundScheduler()    
+    
+    # Add Haar Cascade face extraction job
     scheduler.add_job(
-        lambda: management.call_command('process_face_extraction_jobs', max_jobs=5, run_once=True),
+        lambda: management.call_command('process_haar_extraction_jobs', max_jobs=5, run_once=True),
         'interval',
-        seconds=30, # Schedule face extraction jobs to run every 30 seconds
-        id='face_extraction_job',
+        seconds=30, # Schedule Haar face extraction jobs to run every 30 seconds
+        id='haar_extraction_job',
+        replace_existing=True,
+        max_instances=1  # Prevent overlapping executions
+    )
+    
+    # Add DNN face extraction job (lower frequency due to higher complexity)
+    scheduler.add_job(
+        lambda: management.call_command('process_dnn_extraction_jobs', max_jobs=3, run_once=True),
+        'interval',
+        seconds=60, # Schedule DNN face extraction jobs to run every 60 seconds (less frequent)
+        id='dnn_extraction_job',
         replace_existing=True,
         max_instances=1  # Prevent overlapping executions
     )

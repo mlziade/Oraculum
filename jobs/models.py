@@ -10,7 +10,8 @@ class QueueJob(models.Model):
         FAILED = 'failed', 'Failed'
     
     class JobTypeChoices(models.TextChoices):
-        FACE_EXTRACTION = 'face_extraction', 'Face Extraction'
+        FACE_EXTRACTION_DNN = 'face_extraction_dnn', 'Face Extraction (DNN)'
+        FACE_EXTRACTION_HAAR = 'face_extraction_haar', 'Face Extraction (Haar Cascade)'
         TAGS = 'tags', 'Tags'
 
     id = models.BigAutoField(primary_key=True, help_text="Primary key for the queue job")

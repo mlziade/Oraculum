@@ -8,7 +8,7 @@ class QueueJobViewSet(viewsets.ViewSet):
     """
     ViewSet for managing queue jobs and checking their status.
     """
-    
+
     def retrieve(self, request, pk=None):
         """
         Get the status of a specific queue job by ID.
@@ -16,16 +16,16 @@ class QueueJobViewSet(viewsets.ViewSet):
         try:
             include_faces = request.query_params.get('faces', 'false').lower() == 'true'
             include_tags = request.query_params.get('tags', 'false').lower() == 'true'
-            
+
             # Build queryset with optimized prefetching
             queryset = QueueJob.objects.select_related('picture')
-            
+
             if include_tags:
                 queryset = queryset.prefetch_related('picture__tags')
-            
+
             if include_faces:
                 queryset = queryset.prefetch_related('picture__face_extractions')
-            
+
             job = get_object_or_404(
                 queryset.only(
                     'id', 'job_type', 'status', 'created_at', 'updated_at',
@@ -33,18 +33,17 @@ class QueueJobViewSet(viewsets.ViewSet):
                 ),
                 pk=pk
             )
-            
+
             # Get associated picture data
             picture_data = {
                 'id': job.picture.id,
                 'title': job.picture.title,
                 'description': job.picture.description,
             }
-            
+
             # Include tags if requested
             if include_tags:
                 picture_data['tags'] = [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
-            
             # Include face extractions if requested
             if include_faces:
                 picture_data['face_extractions'] = [
@@ -55,27 +54,29 @@ class QueueJobViewSet(viewsets.ViewSet):
                         'bbox_width': face.bbox_width,
                         'bbox_height': face.bbox_height,
                         'confidence': face.confidence,
+                        'algorithm': face.algorithm,
                         'created_at': face.created_at
                     }
                     for face in job.picture.face_extractions.all()
                 ]
-            
+
             response_data = {
                 'job_id': job.id,
                 'job_type': job.job_type,
                 'status': job.status,
                 'created_at': job.created_at,
                 'updated_at': job.updated_at,
-                'picture': picture_data            }
-            
+                'picture': picture_data
+            }
+
             return Response(response_data, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
             return Response(
-                {'error': f'Failed to retrieve job status: {str(e)}'}, 
+                {'error': f'Failed to retrieve job status: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
     def list(self, request):
         """
         List all queue jobs with optional status and job type filtering.
@@ -84,27 +85,27 @@ class QueueJobViewSet(viewsets.ViewSet):
         job_type_filter = request.query_params.get('job_type', None)
         include_tags = request.query_params.get('tags', 'false').lower() == 'true'
         include_faces = request.query_params.get('faces', 'false').lower() == 'true'
-        
+
         # Optimize query based on whether tags and faces are needed
         queryset = QueueJob.objects.select_related('picture')
-        
+
         if include_tags:
             queryset = queryset.prefetch_related('picture__tags')
-        
+
         if include_faces:
             queryset = queryset.prefetch_related('picture__face_extractions')
-        
+
         queryset = queryset.only(
             'id', 'job_type', 'status', 'created_at', 'updated_at',
             'picture__id', 'picture__title', 'picture__description'
         )
-        
+
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
+
         if job_type_filter:
             queryset = queryset.filter(job_type=job_type_filter)
-        
+
         jobs = []
         for job in queryset.order_by('-created_at'):
             picture_data = {
@@ -112,11 +113,10 @@ class QueueJobViewSet(viewsets.ViewSet):
                 'title': job.picture.title,
                 'description': job.picture.description,
             }
-            
+
             # Only include tags if requested
             if include_tags:
                 picture_data['tags'] = [{'id': tag.id, 'name': tag.name} for tag in job.picture.tags.all()]
-            
             # Only include face extractions if requested
             if include_faces:
                 picture_data['face_extractions'] = [
@@ -127,21 +127,22 @@ class QueueJobViewSet(viewsets.ViewSet):
                         'bbox_width': face.bbox_width,
                         'bbox_height': face.bbox_height,
                         'confidence': face.confidence,
+                        'algorithm': face.algorithm,
                         'created_at': face.created_at
                     }
                     for face in job.picture.face_extractions.all()
                 ]
-            
+
             jobs.append({
                 'job_id': job.id,
                 'job_type': job.job_type,
                 'status': job.status,
                 'created_at': job.created_at,
                 'updated_at': job.updated_at,
-                'picture': picture_data            })
-        
+                'picture': picture_data
+            })
         return Response({'jobs': jobs}, status=status.HTTP_200_OK)
-    
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """
@@ -154,10 +155,20 @@ class QueueJobViewSet(viewsets.ViewSet):
             'completed': QueueJob.objects.filter(status=QueueJob.StatusChoices.COMPLETED).count(),
             'failed': QueueJob.objects.filter(status=QueueJob.StatusChoices.FAILED).count(),
         }
-        
-        # Add job type breakdown
+
+        # Add individual job type breakdown
         for job_type_choice in QueueJob.JobTypeChoices.choices:
             job_type = job_type_choice[0]
             stats[f'{job_type}_jobs'] = QueueJob.objects.filter(job_type=job_type).count()
-        
+
+        # Add grouped face extraction stats for convenience
+        haar_count = QueueJob.objects.filter(job_type=QueueJob.JobTypeChoices.FACE_EXTRACTION_HAAR).count()
+        dnn_count = QueueJob.objects.filter(job_type=QueueJob.JobTypeChoices.FACE_EXTRACTION_DNN).count()
+        stats['face_extraction_total'] = haar_count + dnn_count
+        stats['face_extraction_breakdown'] = {
+            'haar': haar_count,
+            'dnn': dnn_count,
+            'total': haar_count + dnn_count
+        }
+
         return Response(stats, status=status.HTTP_200_OK)
